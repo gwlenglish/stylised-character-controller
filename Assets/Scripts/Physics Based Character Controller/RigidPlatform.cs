@@ -8,4 +8,5 @@ using UnityEngine;
 public class RigidPlatform : MonoBehaviour
 {
     public RigidParent rigidParent;
+    public WalkingOnWall Wall = WalkingOnWall.South;
 }

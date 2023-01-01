@@ -53,7 +53,7 @@ namespace PathCreation.Examples
                         tempRot[i] = transform.rotation[i];
                     }
                 }
-                transform.rotation = Quaternion.Euler(tempRot);
+                //transform.rotation = Quaternion.Euler(tempRot);
                 if (GetComponent<Oscillator>())
                 {
                     Oscillator oscillator = GetComponent<Oscillator>();
