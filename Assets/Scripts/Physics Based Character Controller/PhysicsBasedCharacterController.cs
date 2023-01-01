@@ -33,11 +33,52 @@ public static class Helpers
     }
 }
 
+public class ClientCharacter : Character
+{
+    public Action OnStartWalking;
+    public Action OnStopWalking;
+    public Action OnLanded;
+    bool walking = false;
+
+    public ClientCharacter(PhysicsBasedCharacterController cc) : base(cc)
+    {
+
+    }
+
+    public override void UpdateTick()
+    {
+        base.UpdateTick();
+
+        if (cc.IsLocalPlayer)
+        {
+            if (cc.MoveContext.magnitude > 0)
+            {
+                OnStartWalking?.Invoke();
+                if (!walking)
+                {
+                    walking = true;
+                 
+                }
+            }
+            else
+            {
+                OnStopWalking?.Invoke();
+               
+        
+            }
+
+        
+
+        }
+    }
+}
 public class CharacterStateControlled : Character
 {
     public event Action OnLanded;
     public event Action OnWalking;
     public event Action OnStopWalking;
+    public event Action OnJump;
+    public event Action<bool> OnJumpReady;
     Vector3 _gravitationalForce;
     Vector3 _moveInput;
     Vector3 _moveForceScale;
@@ -47,14 +88,10 @@ public class CharacterStateControlled : Character
     private Quaternion _uprightTargetRot = Quaternion.identity;
     private Quaternion _lastTargetRot = Quaternion.identity;
     private Vector3 _platformInitRot = Vector3.zero;
-    private bool _prevGrounded;
-    private Vector3 _previousVelocity;
-    private float _timeSinceUngrounded;
-    private float _timeSinceJump;
-    private bool _isJumping;
     private bool _shouldMaintainHeight;
-    private bool _jumpReady;
-    private float _timeSinceJumpPressed;
+
+    private Vector3 _previousVelocity;
+
 
     public CharacterStateControlled(PhysicsBasedCharacterController cc) : base(cc)
     {
@@ -63,8 +100,8 @@ public class CharacterStateControlled : Character
 
     private void CharacterJump(Vector3 jumpInput, bool grounded, RaycastHit rayHit)
     {
-        _timeSinceJumpPressed += Time.fixedDeltaTime;
-        _timeSinceJump += Time.fixedDeltaTime;
+        cc._timeSinceJumpPressed += Time.fixedDeltaTime;
+        cc._timeSinceJump += Time.fixedDeltaTime;
         float fallingvel = 0;
         switch (cc.Wall)
         {
@@ -87,7 +124,8 @@ public class CharacterStateControlled : Character
         if (fallingvel <= 0)//this is is
         {
             _shouldMaintainHeight = true;
-            _jumpReady = true;
+            cc._jumpReady = true;
+            OnJumpReady?.Invoke(true);
             if (!grounded)
             {
                 // Increase downforce for a sudden plummet.
@@ -98,7 +136,7 @@ public class CharacterStateControlled : Character
         {
             if (!grounded)
             {
-                if (_isJumping)
+                if (cc._isJumping)
                 {
                     cc.Rb.AddForce(_gravitationalForce * (cc.RiseGravityFactor - 1f));
                 }
@@ -110,15 +148,16 @@ public class CharacterStateControlled : Character
             }
         }
 
-        if (_timeSinceJumpPressed < cc.JumpBuffer)
+        if (cc._timeSinceJumpPressed < cc.JumpBuffer)
         {
-            if (_timeSinceUngrounded < cc.CoyoteTime)
+            if (cc._timeSinceUngrounded < cc.CoyoteTime)
             {
-                if (_jumpReady)
+                if (cc._jumpReady)
                 {
-                    _jumpReady = false;
+                    OnJumpReady?.Invoke(false);
+                    cc._jumpReady = false;
                     _shouldMaintainHeight = false;
-                    _isJumping = true;
+                    cc._isJumping = true;
                     cc.Rb.velocity = Vector3.Scale(cc.Rb.velocity, _moveForceScale);
                     // _rb.velocity = new Vector3(_rb.velocity.x, 0f, _rb.velocity.z); // Cheat fix... (see comment below when adding force to rigidbody).
                     if (rayHit.distance != 0) // i.e. if the ray has hit
@@ -127,8 +166,9 @@ public class CharacterStateControlled : Character
                     }
                     cc.Rb.AddForce(Helpers.UpRightDirection(cc.Wall) * cc.JumpFactor, ForceMode.Impulse); // This does not work very consistently... Jump height is affected by initial y velocity and y position relative to RideHeight... Want to adopt a fancier approach (more like PlayerMovement). A cheat fix to ensure consistency has been issued above...
                     //_timeSinceJumpPressed = _jumpBuffer; // So as to not activate further jumps, in the case that the player lands before the jump timer surpasses the buffer.
-                    _timeSinceJump = 0f;
+                    cc._timeSinceJump = 0f;
 
+                    OnJump?.Invoke();
                     // FindObjectOfType<AudioManager>().Play("Jump");
                 }
             }
@@ -391,10 +431,10 @@ public class CharacterStateControlled : Character
         }
 
 
-        bool grounded = CheckIfGrounded(rayHitGround, rayHit);
-        if (grounded == true)
+        cc.Grounded = CheckIfGrounded(rayHitGround, rayHit);
+        if (cc.Grounded == true)
         {
-            if (_prevGrounded == false)
+            if (cc._prevGrounded == false)
             {
                 OnLanded?.Invoke();
             }
@@ -409,7 +449,7 @@ public class CharacterStateControlled : Character
             }
 
 
-            _timeSinceUngrounded = 0f;
+            cc._timeSinceUngrounded = 0f;
 
 
         }
@@ -417,11 +457,11 @@ public class CharacterStateControlled : Character
         {
             OnStopWalking?.Invoke();
 
-            _timeSinceUngrounded += Time.fixedDeltaTime;
+            cc._timeSinceUngrounded += Time.fixedDeltaTime;
         }
 
         CharacterMove(_moveInput, rayHit);
-        CharacterJump(cc.JumpInput, grounded, rayHit);
+        CharacterJump(cc.JumpInput, cc.Grounded, rayHit);
         if (rayHitGround && _shouldMaintainHeight)
         {
             MaintainHeight(rayHit);
@@ -434,7 +474,7 @@ public class CharacterStateControlled : Character
         }
        
 
-        _prevGrounded = grounded;
+        cc._prevGrounded = cc.Grounded;
     }
 }
 public class Character : EntityStates
@@ -488,9 +528,7 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
     StateMachine machine;
     public float Gravity = 9.8f;
     private Rigidbody _rb;
-    private Vector3 _gravitationalForce;
 
-    private Vector3 _previousVelocity = Vector3.zero;
     private Vector2 _moveContext;
     private ParticleSystem.EmissionModule _emission;
 
@@ -501,7 +539,6 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
     [SerializeField] private LayerMask _terrainLayer;
     [SerializeField] private ParticleSystem _dustParticleSystem;
 
-    private bool _shouldMaintainHeight = true;
 
     public float RideHeight => _rideHeight;
     public float RayToGroundLength => _rayToGroundLength;
@@ -514,12 +551,6 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
     [SerializeField] private float _rideSpringDamper = 5f; // rideSpringDampener: dampener of spring. (?)
     [SerializeField] private Oscillator _squashAndStretchOcillator;
 
-
-
-    private Quaternion _uprightTargetRot = Quaternion.identity; // Adjust y value to match the desired direction to face.
-    private Quaternion _lastTargetRot;
-    private Vector3 _platformInitRot;
-    private bool didLastRayHit;
 
     public float UpRightSpringStrength => _uprightSpringStrength;
     public float UpRightSpringDamper => _uprightSpringDamper;
@@ -554,14 +585,15 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
     [SerializeField] private AnimationCurve _maxAccelerationForceFactorFromDot;
     [SerializeField] private Vector3 _moveForceScale = new Vector3(1f, 0f, 1f);
 
+    public bool Grounded = false;
     public Vector3 JumpInput => _jumpInput;
     private Vector3 _jumpInput;
-    private float _timeSinceJumpPressed = 0f;
-    private float _timeSinceUngrounded = 0f;
-    private float _timeSinceJump = 0f;
-    private bool _jumpReady = true;
-    private bool _isJumping = false;
-    private bool _prevGrounded = false;
+    public float _timeSinceJumpPressed = 0f;
+    public float _timeSinceUngrounded = 0f;
+    public float _timeSinceJump = 0f;
+    public bool _jumpReady = true;
+    public bool _isJumping = false;
+    public bool _prevGrounded = false;
 
     public float FallGravityFactor => _fallGravityFactor;
     public float RiseGravityFactor => _riseGravityFactor;
@@ -582,11 +614,12 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
     /// </summary>
     /// 
 
+    StateMachine clientmachine = new StateMachine();
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
         _rb = GetComponent<Rigidbody>();
-        _gravitationalForce = -Helpers.UpRightDirection(Wall) * Gravity * _rb.mass;
+        //_gravitationalForce = -Helpers.UpRightDirection(Wall) * Gravity * _rb.mass;
 
         if (_dustParticleSystem)
         {
@@ -598,17 +631,35 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
         CharacterStateControlled controlled = new CharacterStateControlled(this);
         Character disabled = new Character(this);
 
+
         Func<bool> Controlled() => () => State == CharacterState.Controlled;
         Func<bool> Disabled() => () => State == CharacterState.Disabled;
         machine.AddAnyTransition(controlled, Controlled());
         machine.AddAnyTransition(disabled, Disabled());
 
-        controlled.OnLanded += PlayLandedSFX;
-        controlled.OnWalking += PlayWalkingParticles;
-        controlled.OnWalking += PlayWalkingSFX;
-        controlled.OnStopWalking += StopWalkingSFX;
-        controlled.OnStopWalking += StopParticlesVFX;
-      
+        controlled.OnJump += OnJumpClientRpc;
+
+        clientmachine = new StateMachine();
+        ClientCharacter client = new ClientCharacter(this);
+        client.OnStartWalking += PlayWalkingParticles;
+        client.OnStartWalking += PlayWalkingSFX;
+
+        client.OnStopWalking += StopWalkingSFX;
+        client.OnStopWalking += StopParticlesVFX;
+
+        client.OnLanded += PlayLandedSFX;//hmm need better way to detect. currently its server side..
+
+        clientmachine.AddAnyTransition(client, Controlled());
+        clientmachine.AddAnyTransition(disabled, Disabled());
+
+
+    }
+
+    [ClientRpc]
+    void OnJumpClientRpc()
+    {
+        PlayJumpSFX();
+       // _jumpReady = isReady;
     }
 
     public override void OnNetworkDespawn()
@@ -621,6 +672,7 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
     private void Update()
     {
         machine.Tick();
+        clientmachine.Tick();
     }
 
     /// <summary>
@@ -653,6 +705,10 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
 
     }
 
+    void PlayJumpSFX()
+    {
+        FindObjectOfType<AudioManager>().Play("Jump");
+    }
     private void PlayWalkingParticles()
     {
 
@@ -691,25 +747,16 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
     /// <param name="context">The move input's context.</param>
     public void MoveInputAction(InputAction.CallbackContext context)
     {
-        _moveContext = context.ReadValue<Vector2>();
+        if (IsLocalPlayer)
+        {
+            _moveContext = context.ReadValue<Vector2>();
+        }
+      
         if (IsLocalPlayer && !IsServer)
         {
             SetInputServerRPC(_moveContext);
         }
-        if (IsLocalPlayer)
-        {
-            if (_moveContext.magnitude > 0)
-            {
-                PlayWalkingParticles();
-                PlayWalkingSFX();
-            }
-            else
-            {
-                StopParticlesVFX();
-                StopWalkingSFX();
-            }
-
-        }
+       
     }
     [ServerRpc(RequireOwnership =false)]
     void SetInputServerRPC(Vector2 input)
@@ -721,24 +768,46 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
     void SetJumpServerRpc(Vector2 input)
     {
         _jumpInput = input;
+      
     }
+
+  
     /// <summary>
     /// Reads the player jump input.
     /// </summary>
     /// <param name="context">The jump input's context.</param>
     public void JumpInputAction(InputAction.CallbackContext context)
     {
+        if (!IsLocalPlayer) return;
         float jumpContext = context.ReadValue<float>();
         _jumpInput = new Vector3(0, jumpContext, 0);
 
+        //  Debug.Log(_jumpInput);
         if (context.started) // button down
         {
             _timeSinceJumpPressed = 0f;
+
         }
 
-        if (IsLocalPlayer && !IsServer)
+        if (!IsServer)
         {
             SetJumpServerRpc(_jumpInput);
+        }
+      //  ClientJumpFX();
+     
+
+
+    }
+
+    void ClientJumpFX()
+    {
+        
+        if (IsLocalPlayer)
+        {
+            if (_jumpReady && _jumpInput.y > 0)
+            {
+                PlayJumpSFX();
+            }
         }
     }
 
