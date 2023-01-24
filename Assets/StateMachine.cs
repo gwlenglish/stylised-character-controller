@@ -67,7 +67,7 @@ public class StateMachine : IDisposable
 
         _currentState?.UpdateTick();
 
-      //  Debug.Log(_currentState.GetType().Name);
+        Debug.Log(_currentState.GetType().Name);
     }
 
     public void FixedTick()

@@ -49,28 +49,120 @@ public class ClientCharacter : Character
     {
         base.UpdateTick();
 
-        if (cc.IsLocalPlayer)
+        switch (cc.State)
         {
-            if (cc.MoveContext.magnitude > 0)
-            {
-                OnStartWalking?.Invoke();
-                if (!walking)
+            case CharacterState.Grounded:
+                if (cc.IsLocalPlayer)
                 {
-                    walking = true;
-                 
-                }
-            }
-            else
-            {
-                OnStopWalking?.Invoke();
-               
-        
-            }
+                    if (cc.MoveContext.magnitude > 0)
+                    {
+                        OnStartWalking?.Invoke();
+                        if (!walking)
+                        {
+                            walking = true;
 
-        
+                        }
+                    }
+                    else
+                    {
+                        OnStopWalking?.Invoke();
+
+
+                    }
+
+
+
+                }
+                break;
+        }
+       
+    }
+}
+
+public class CharacterLand : Character
+{
+    public CharacterLand(PhysicsBasedCharacterController cc) : base(cc)
+    {
+
+    }
+}
+public class CharacterJumpUp : Character
+{
+    float timer = 0;
+    float jumpwait = .5f;
+    public CharacterJumpUp(PhysicsBasedCharacterController cc) : base(cc)
+    {
+
+    }
+
+    public override void OnEnter()
+    {
+        base.OnEnter();
+        cc.Rb.AddForce(Helpers.UpRightDirection(cc.Wall) * cc.JumpFactor, ForceMode.Impulse); // This does not work very consistently... Jump height is affected by initial y velocity and y position relative to RideHeight... Want to adopt a fancier approach (more like PlayerMovement). A cheat fix to ensure consistency has been issued above...
+        timer = 0;
+    }
+
+    public override void FixedTick()
+    {
+        base.FixedTick();
+        var grounded = cc.Grounded;
+
+        cc.CheckGrounded();
+
+        var _gravitationalForce = -Helpers.UpRightDirection(cc.Wall) * cc.Gravity * cc.Rb.mass;
+
+        float fallingvel = 0;
+        switch (cc.Wall)
+        {
+            case WalkingOnWall.South:
+                fallingvel = cc.Rb.velocity.y;
+                break;
+            case WalkingOnWall.North:
+                fallingvel = -cc.Rb.velocity.y;
+                break;
+            case WalkingOnWall.West:
+                fallingvel = cc.Rb.velocity.x;
+                break;
+            case WalkingOnWall.East:
+                fallingvel = -cc.Rb.velocity.x;
+                break;
 
         }
+
+        //cc.Rb.AddForce(_gravitationalForce * (cc.FallGravityFactor - 1f)); // Hmm... this feels a bit weird. I want a reactive jump, but I don't want it to dive all the time...
+
+        //  Debug.Log($"Falling: {fallingvel} and Gronded{grounded}");
+        if (fallingvel <= 0)//this is is
+        {
+            cc.Rb.AddForce(_gravitationalForce * (cc.FallGravityFactor - 1f)); // Hmm... this feels a bit weird. I want a reactive jump, but I don't want it to dive all the time...
+        }
+        else if (fallingvel > 0)
+        {
+            if (cc._isJumping && cc.JumpInput != Vector3.zero)
+            {
+                cc.Rb.AddForce(_gravitationalForce * (cc.RiseGravityFactor - 1f));
+            }
+            else if 
+            (cc.JumpInput == Vector3.zero)
+            {
+                // Impede the jump height to achieve a low jump.
+                cc.Rb.AddForce(_gravitationalForce * (cc.LowJumpFactor - 1f));
+            }
+           
+        }
+
+        timer += Time.deltaTime;
+        if (timer >= jumpwait)
+        {
+            if (cc.Grounded)
+            {
+                cc.ChangeState(CharacterState.Grounded);
+            }
+        }
+       
     }
+
+
 }
 public class CharacterStateControlled : Character
 {
@@ -83,7 +175,7 @@ public class CharacterStateControlled : Character
     Vector3 _moveInput;
     Vector3 _moveForceScale;
     Vector3 _m_GoalVel;
-    RigidPlatform platform = null;
+
     private bool didLastRayHit;
     private Quaternion _uprightTargetRot = Quaternion.identity;
     private Quaternion _lastTargetRot = Quaternion.identity;
@@ -98,6 +190,13 @@ public class CharacterStateControlled : Character
 
     }
 
+    public override void OnEnter()
+    {
+        base.OnEnter();
+        _shouldMaintainHeight = true;
+        cc._jumpReady = true;
+        OnJumpReady?.Invoke(true);
+    }
     private void CharacterJump(Vector3 jumpInput, bool grounded, RaycastHit rayHit)
     {
         cc._timeSinceJumpPressed += Time.fixedDeltaTime;
@@ -121,32 +220,32 @@ public class CharacterStateControlled : Character
         }
 
       //  Debug.Log($"Falling: {fallingvel} and Gronded{grounded}");
-        if (fallingvel <= 0)//this is is
-        {
-            _shouldMaintainHeight = true;
-            cc._jumpReady = true;
-            OnJumpReady?.Invoke(true);
-            if (!grounded)
-            {
-                // Increase downforce for a sudden plummet.
-                cc.Rb.AddForce(_gravitationalForce * (cc.FallGravityFactor - 1f)); // Hmm... this feels a bit weird. I want a reactive jump, but I don't want it to dive all the time...
-            }
-        }
-        else if (fallingvel > 0)
-        {
-            if (!grounded)
-            {
-                if (cc._isJumping)
-                {
-                    cc.Rb.AddForce(_gravitationalForce * (cc.RiseGravityFactor - 1f));
-                }
-                if (jumpInput == Vector3.zero)
-                {
-                    // Impede the jump height to achieve a low jump.
-                    cc.Rb.AddForce(_gravitationalForce * (cc.LowJumpFactor - 1f));
-                }
-            }
-        }
+        //if (fallingvel <= 0)//this is is
+        //{
+        //    _shouldMaintainHeight = true;
+        //    cc._jumpReady = true;
+        //    OnJumpReady?.Invoke(true);
+        //    if (!grounded)
+        //    {
+        //        // Increase downforce for a sudden plummet.
+        //        cc.Rb.AddForce(_gravitationalForce * (cc.FallGravityFactor - 1f)); // Hmm... this feels a bit weird. I want a reactive jump, but I don't want it to dive all the time...
+        //    }
+        //}
+        //else if (fallingvel > 0)
+        //{
+        //    if (!grounded)
+        //    {
+        //        if (cc._isJumping)
+        //        {
+        //            cc.Rb.AddForce(_gravitationalForce * (cc.RiseGravityFactor - 1f));
+        //        }
+        //        if (jumpInput == Vector3.zero)
+        //        {
+        //            // Impede the jump height to achieve a low jump.
+        //            cc.Rb.AddForce(_gravitationalForce * (cc.LowJumpFactor - 1f));
+        //        }
+        //    }
+        //}
 
         if (cc._timeSinceJumpPressed < cc.JumpBuffer)
         {
@@ -164,33 +263,23 @@ public class CharacterStateControlled : Character
                     {
                         //   _rb.position = new Vector3(_rb.position.x, _rb.position.y - (rayHit.distance - _rideHeight), _rb.position.z);
                     }
-                    cc.Rb.AddForce(Helpers.UpRightDirection(cc.Wall) * cc.JumpFactor, ForceMode.Impulse); // This does not work very consistently... Jump height is affected by initial y velocity and y position relative to RideHeight... Want to adopt a fancier approach (more like PlayerMovement). A cheat fix to ensure consistency has been issued above...
-                    //_timeSinceJumpPressed = _jumpBuffer; // So as to not activate further jumps, in the case that the player lands before the jump timer surpasses the buffer.
+                    
+                    
+                    //cc.Rb.AddForce(Helpers.UpRightDirection(cc.Wall) * cc.JumpFactor, ForceMode.Impulse); // This does not work very consistently... Jump height is affected by initial y velocity and y position relative to RideHeight... Want to adopt a fancier approach (more like PlayerMovement). A cheat fix to ensure consistency has been issued above...
+                    
+                    
+                    cc._timeSinceJumpPressed = cc.JumpBuffer; // So as to not activate further jumps, in the case that the player lands before the jump timer surpasses the buffer.
                     cc._timeSinceJump = 0f;
 
                     OnJump?.Invoke();
+                    cc.ChangeState(CharacterState.Airborne);
                     // FindObjectOfType<AudioManager>().Play("Jump");
                 }
             }
         }
     }
 
-    private void SetPlatform(RaycastHit rayHit)
-    {
-        rayHit.transform.TryGetComponent(out platform);
-        if (platform != null)
-        {
-            RigidParent rigidParent = platform.rigidParent;
-            cc.GetComponent<NetworkObject>().TrySetParent(rigidParent.transform);
-        }
-        else
-        {
-            if (cc.transform.parent != null)
-            {
-                cc.GetComponent<NetworkObject>().TryRemoveParent();
-            }
-        }
-    }
+    
 
 
 
@@ -199,9 +288,9 @@ public class CharacterStateControlled : Character
         if (didLastRayHit)
         {
             _lastTargetRot = _uprightTargetRot;
-            if (platform != null)
+            if (cc.Platform != null)
             {
-                _platformInitRot = platform.transform.rotation.eulerAngles;
+                _platformInitRot = cc.Platform.transform.rotation.eulerAngles;
             }
             else
             {
@@ -222,9 +311,9 @@ public class CharacterStateControlled : Character
         {
             _uprightTargetRot = Quaternion.LookRotation(yLookAt, Helpers.UpRightDirection(cc.Wall));
             _lastTargetRot = _uprightTargetRot;
-            if (platform != null)
+            if (cc.Platform != null)
             {
-                _platformInitRot = platform.transform.rotation.eulerAngles;
+                _platformInitRot = cc.Platform.transform.rotation.eulerAngles;
             }
             else
             {
@@ -234,28 +323,28 @@ public class CharacterStateControlled : Character
         }
         else
         {
-            if (platform != null)
+            if (cc.Platform != null)
             {
-                Vector3 platformRot = platform.transform.rotation.eulerAngles;//get the rotation here that's not always y
+                Vector3 platformRot = cc.Platform.transform.rotation.eulerAngles;//get the rotation here that's not always y
                 Vector3 deltaPlatformRot = platformRot - _platformInitRot;
                 float yAngle = _lastTargetRot.eulerAngles.y + deltaPlatformRot.y;
                 _uprightTargetRot = Quaternion.Euler(new Vector3(0f, yAngle, 0f));
-                switch (platform.Wall)
+                switch (cc.Platform.Wall)
                 {
                     case WalkingOnWall.North:
-                        _uprightTargetRot = Quaternion.LookRotation(platform.transform.forward, Helpers.UpRightDirection(platform.Wall));
+                        _uprightTargetRot = Quaternion.LookRotation(cc.Platform.transform.forward, Helpers.UpRightDirection(cc.Platform.Wall));
                         break;
                     case WalkingOnWall.South:
 
-                        _uprightTargetRot = Quaternion.LookRotation(platform.transform.forward, Helpers.UpRightDirection(platform.Wall));
+                        _uprightTargetRot = Quaternion.LookRotation(cc.Platform.transform.forward, Helpers.UpRightDirection(cc.Platform.Wall));
                         break;
                     case WalkingOnWall.East:
 
-                        _uprightTargetRot = Quaternion.LookRotation(platform.transform.right, Helpers.UpRightDirection(platform.Wall));
+                        _uprightTargetRot = Quaternion.LookRotation(cc.Platform.transform.right, Helpers.UpRightDirection(cc.Platform.Wall));
                         break;
                     case WalkingOnWall.West:
 
-                        _uprightTargetRot = Quaternion.LookRotation(platform.transform.right, Helpers.UpRightDirection(platform.Wall));
+                        _uprightTargetRot = Quaternion.LookRotation(cc.Platform.transform.right, Helpers.UpRightDirection(cc.Platform.Wall));
                         break;
                     default:
                         _uprightTargetRot = Quaternion.Euler(new Vector3(0f, yAngle, 0f));
@@ -285,14 +374,7 @@ public class CharacterStateControlled : Character
 
         cc.Rb.AddTorque((rotAxis * (rotRadians * cc.UpRightSpringStrength)) - (cc.Rb.angularVelocity * cc.UpRightSpringDamper));
     }
-    private (bool, RaycastHit) RaycastToGround()
-    {
-        RaycastHit rayHit;
-        Ray rayToGround = new Ray(cc.transform.position, -Helpers.UpRightDirection(cc.Wall));
-        bool rayHitGround = Physics.Raycast(rayToGround, out rayHit, cc.RayToGroundLength, cc.Terrain.value);
-        Debug.DrawRay(cc.transform.position, -Helpers.UpRightDirection(cc.Wall) * cc.RayToGroundLength, Color.blue);
-        return (rayHitGround, rayHit);
-    }
+
 
     private void MaintainHeight(RaycastHit rayHit)
     {
@@ -343,19 +425,7 @@ public class CharacterStateControlled : Character
 
         cc.Rb.AddForceAtPosition(Vector3.Scale(neededAccel * cc.Rb.mass, (_moveForceScale)), cc.transform.position + new Vector3(0, cc.transform.localScale.y * cc.LeanFactor, 0));// new Vector3(0f, transform.localScale.y * _leanFactor, 0f)); // Using AddForceAtPosition in order to both move the player and cause the play to lean in the direction of input.
     }
-    private bool CheckIfGrounded(bool rayHitGround, RaycastHit rayHit)
-    {
-        bool grounded;
-        if (rayHitGround == true)
-        {
-            grounded = rayHit.distance <= cc.RideHeight * 1.3f; // 1.3f allows for greater leniancy (as the value will oscillate about the rideHeight).
-        }
-        else
-        {
-            grounded = false;
-        }
-        return grounded;
-    }
+ 
     private Vector3 GetLookDirection(lookDirectionOptions lookDirectionOption)
     {
         Vector3 lookDirection = Vector3.zero;
@@ -424,14 +494,9 @@ public class CharacterStateControlled : Character
             _moveInput = AdjustInputToFaceCamera(_moveInput);
         }
 
-        (bool rayHitGround, RaycastHit rayHit) = RaycastToGround();
-        if (rayHitGround)
-        {
-            SetPlatform(rayHit);
-        }
+      
+        cc.Grounded = cc.CheckGrounded();
 
-
-        cc.Grounded = CheckIfGrounded(rayHitGround, rayHit);
         if (cc.Grounded == true)
         {
             if (cc._prevGrounded == false)
@@ -448,7 +513,6 @@ public class CharacterStateControlled : Character
                 OnStopWalking?.Invoke();
             }
 
-
             cc._timeSinceUngrounded = 0f;
 
 
@@ -456,21 +520,20 @@ public class CharacterStateControlled : Character
         else
         {
             OnStopWalking?.Invoke();
-
             cc._timeSinceUngrounded += Time.fixedDeltaTime;
         }
 
-        CharacterMove(_moveInput, rayHit);
-        CharacterJump(cc.JumpInput, cc.Grounded, rayHit);
-        if (rayHitGround && _shouldMaintainHeight)
+        CharacterMove(_moveInput, cc.RayHit);
+        CharacterJump(cc.JumpInput, cc.Grounded, cc.RayHit);
+        if (cc.RayHitGround && _shouldMaintainHeight)
         {
-            MaintainHeight(rayHit);
+            MaintainHeight(cc.RayHit);
         }
 
         Vector3 lookDirection = GetLookDirection(cc.LookDirection);
-        if (rayHitGround)
+        if (cc.RayHitGround)
         {
-            MaintainUpright(lookDirection, rayHit);
+            MaintainUpright(lookDirection, cc.RayHit);
         }
        
 
@@ -511,7 +574,8 @@ public class EntityStates : IState
 public enum CharacterState : byte
 {
     Disabled = 0,
-    Controlled = 10
+    Grounded = 10,
+    Airborne = 20
 }
 
 public enum lookDirectionOptions { velocity, acceleration, moveInput };
@@ -520,11 +584,13 @@ public enum lookDirectionOptions { velocity, acceleration, moveInput };
 /// </summary>
 public class PhysicsBasedCharacterController : NetworkBehaviour
 {
+    public AnimationWrapper AnimWrapper => wrapper;
+    [SerializeField] AnimationWrapper wrapper;
     public Oscillator SquashAndStretch => _squashAndStretchOcillator;
     public Rigidbody Rb => _rb;
     public Vector2 MoveContext => _moveContext;
     public WalkingOnWall Wall = WalkingOnWall.South;
-    public CharacterState State = CharacterState.Controlled;
+    public CharacterState State = CharacterState.Grounded;
     StateMachine machine;
     public float Gravity = 9.8f;
     private Rigidbody _rb;
@@ -539,7 +605,8 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
     [SerializeField] private LayerMask _terrainLayer;
     [SerializeField] private ParticleSystem _dustParticleSystem;
 
-
+    public RigidPlatform Platform => platform;
+    RigidPlatform platform = null;
     public float RideHeight => _rideHeight;
     public float RayToGroundLength => _rayToGroundLength;
     public float RideSpringStrength => _rideSpringStrength;
@@ -614,11 +681,32 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
     /// </summary>
     /// 
 
+
     StateMachine clientmachine = new StateMachine();
+
+    public void ChangeState(CharacterState state)
+    {
+        State = state;
+        if (IsServer && !IsClient)
+        {
+            OnStateChangedClientRpc((byte)State);
+        }
+    }
+
+    [ClientRpc]
+    void OnStateChangedClientRpc(byte state)
+    {
+        ChangeState((CharacterState)state);
+    }
+    private void Awake()
+    {
+        _rb = GetComponent<Rigidbody>();
+        wrapper = GetComponentInChildren<AnimationWrapper>();
+    }
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
-        _rb = GetComponent<Rigidbody>();
+
         //_gravitationalForce = -Helpers.UpRightDirection(Wall) * Gravity * _rb.mass;
 
         if (_dustParticleSystem)
@@ -630,20 +718,32 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
 
         CharacterStateControlled controlled = new CharacterStateControlled(this);
         Character disabled = new Character(this);
+        CharacterJumpUp serverjump = new CharacterJumpUp(this);
+        CharacterLand serverland = new CharacterLand(this);
 
-
-        Func<bool> Controlled() => () => State == CharacterState.Controlled;
+        Func<bool> Controlled() => () => State == CharacterState.Grounded;
         Func<bool> Disabled() => () => State == CharacterState.Disabled;
+
+        Func<bool> StartJump() => () => State == CharacterState.Airborne;
+        Func<bool> EndJumpLand() => () => State == CharacterState.Grounded;
+
         machine.AddAnyTransition(controlled, Controlled());
         machine.AddAnyTransition(disabled, Disabled());
+        machine.AddAnyTransition(serverjump, StartJump());
+        machine.AddTransition(serverjump, serverland, EndJumpLand());
+
 
         controlled.OnJump += OnJumpClientRpc;
 
+
         clientmachine = new StateMachine();
         ClientCharacter client = new ClientCharacter(this);
+
         client.OnStartWalking += PlayWalkingParticles;
         client.OnStartWalking += PlayWalkingSFX;
+        client.OnStartWalking += WalkingAnimation;
 
+        client.OnStopWalking += IdleAnimation;
         client.OnStopWalking += StopWalkingSFX;
         client.OnStopWalking += StopParticlesVFX;
 
@@ -655,11 +755,27 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
 
     }
 
+    void JumpAnimation()
+    {
+        wrapper.PlayAnimation("JumpUp");
+    }
+    void WalkingAnimation()
+    {
+        wrapper.PlayAnimation("Run");
+    }
+    void IdleAnimation()
+    {
+        wrapper.PlayAnimation("Idle");
+    }
+
+
+
     [ClientRpc]
     void OnJumpClientRpc()
     {
         PlayJumpSFX();
-       // _jumpReady = isReady;
+        JumpAnimation();
+        // _jumpReady = isReady;
     }
 
     public override void OnNetworkDespawn()
@@ -667,7 +783,61 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
         base.OnNetworkDespawn();
     }
 
-   
+    private void SetPlatform(RaycastHit rayHit)
+    {
+        rayHit.transform.TryGetComponent(out platform);
+        if (platform != null)
+        {
+            RigidParent rigidParent = platform.rigidParent;
+            GetComponent<NetworkObject>().TrySetParent(rigidParent.transform);
+        }
+        else
+        {
+            if (transform.parent != null)
+            {
+                GetComponent<NetworkObject>().TryRemoveParent();
+            }
+        }
+    }
+    public RaycastHit RayHit => rayHit;
+    public bool RayHitGround => rayHitGround;
+    public Ray RayToGround => rayToGround;
+
+    RaycastHit rayHit;
+    bool rayHitGround;
+    Ray rayToGround;
+    private void RaycastToGround()
+    {
+        rayHit = new RaycastHit();
+        rayHitGround = false;
+        rayToGround = new Ray(transform.position, -Helpers.UpRightDirection(Wall));
+        rayHitGround = Physics.Raycast(rayToGround, out rayHit, RayToGroundLength, Terrain.value);
+        Debug.DrawRay(transform.position, -Helpers.UpRightDirection(Wall) * RayToGroundLength, Color.blue);
+    }
+    public bool CheckGrounded()
+    {
+        RaycastToGround();
+        if (rayHitGround)
+        {
+            SetPlatform(rayHit);
+        }
+        Grounded = CheckIfGrounded(rayHitGround, rayHit);
+        return Grounded;
+    }
+
+    private bool CheckIfGrounded(bool rayHitGround, RaycastHit rayHit)
+    {
+        bool grounded;
+        if (rayHitGround == true)
+        {
+            grounded = rayHit.distance <= RideHeight * 1.3f; // 1.3f allows for greater leniancy (as the value will oscillate about the rideHeight).
+        }
+        else
+        {
+            grounded = false;
+        }
+        return grounded;
+    }
 
     private void Update()
     {
@@ -782,10 +952,12 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
         float jumpContext = context.ReadValue<float>();
         _jumpInput = new Vector3(0, jumpContext, 0);
 
+     
         //  Debug.Log(_jumpInput);
         if (context.started) // button down
         {
             _timeSinceJumpPressed = 0f;
+
 
         }
 
