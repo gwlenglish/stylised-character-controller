@@ -196,6 +196,7 @@ public class CharacterStateControlled : Character
         _shouldMaintainHeight = true;
         cc._jumpReady = true;
         OnJumpReady?.Invoke(true);
+        
     }
     private void CharacterJump(Vector3 jumpInput, bool grounded, RaycastHit rayHit)
     {
@@ -752,6 +753,11 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
         clientmachine.AddAnyTransition(client, Controlled());
         clientmachine.AddAnyTransition(disabled, Disabled());
 
+        if (IsServer)
+        {
+            ChangeState(CharacterState.Airborne);
+        }
+       
 
     }
 
@@ -841,8 +847,16 @@ public class PhysicsBasedCharacterController : NetworkBehaviour
 
     private void Update()
     {
-        machine.Tick();
-        clientmachine.Tick();
+       if (IsServer)
+        {
+            machine.Tick();
+        }
+
+       if (IsClient)
+        {
+            clientmachine.Tick();
+        }
+
     }
 
     /// <summary>
